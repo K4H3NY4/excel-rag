@@ -1,30 +1,31 @@
 import os
-from dotenv import load_dotenv
-from flask import Flask, request
-from twilio.twiml.messaging_response import MessagingResponse
 import logging
 import pandas as pd
-from langchain_groq import ChatGroq
+from flask import Flask, request
+from twilio.twiml.messaging_response import MessagingResponse
+from dotenv import load_dotenv
+
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.chains import RetrievalQA
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_groq import ChatGroq
 
 # Load environment variables
 load_dotenv()
 
-# Configure logging
+# === Logging ===
 logging.basicConfig(level=logging.INFO)
 
-# Twilio credentials
+# === Twilio credentials ===
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
-# Groq API key
+# === Groq API Key ===
 groq_key = os.getenv("API_KEY")
 
-# === LangChain setup ===
+# === Read and process Excel data ===
 def get_text_from_excel(filepath):
     df = pd.read_excel(filepath, engine="openpyxl")
     return "\n".join(df.astype(str).apply(lambda row: " | ".join(row), axis=1).tolist())
@@ -32,11 +33,13 @@ def get_text_from_excel(filepath):
 excel_path = "products.xlsx"
 raw_text = get_text_from_excel(excel_path)
 
+# === LangChain setup ===
 text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 docs = text_splitter.create_documents([raw_text])
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 index_path = "faiss_index"
+
 if os.path.exists(index_path):
     vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
     logging.info("Loaded existing FAISS index.")
@@ -58,7 +61,7 @@ qa = RetrievalQA.from_chain_type(
     return_source_documents=True,
 )
 
-# === Flask app ===
+# === Flask App ===
 app = Flask(__name__)
 
 @app.route("/whatsapp", methods=["POST"])
@@ -85,7 +88,3 @@ def whatsapp_reply():
 
     resp.message(answer)
     return str(resp)
-
-if __name__ == "__main__":
-    logging.info("Starting Flask server on port 5000...")
-    app.run(debug=True, port=5000)
